@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>析课 - 课程表解析工具</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- SheetJS for Excel processing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!--baidu tongji-->
+    <script>
+        var _hmt = _hmt || [];
+        (function() {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?fac775161e4d94dff642c2e42523c568";
+        var s = document.getElementsByTagName("script")[0]; 
+        s.parentNode.insertBefore(hm, s);
+        })();
+    </script>
+
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Configuration Area -->
+        <aside class="config-panel no-print">
+            <div class="brand-title" aria-label="析课 课程表解析工具">
+                <h1 class="brand-title-main">析课</h1>
+                <div class="brand-title-sub">课程表解析工具</div>
+            </div>
+
+            <div class="config-group">
+                <label class="btn-primary">
+                    选择课表文件（Excel/PDF/图片）
+                    <input type="file" id="fileUpload" accept=".xlsx,.xls,.png,.jpg,.jpeg,.pdf" hidden>
+                </label>
+                <p id="fileName" class="status-text">未选择文件</p>
+
+                <div id="uploadPreview" class="no-print" style="display:none; margin-top: 10px; padding: 10px; border: 1px solid #eee; border-radius: 10px; background: #fff;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px;">
+                        <div style="font-weight: 600; font-size: 12px; color: #111;">已上传课表预览</div>
+                        <button type="button" id="btnReupload" class="btn-secondary" style="padding: 6px 10px;">重新上传</button>
+                    </div>
+                    <div id="uploadPreviewBody"></div>
+                    <div id="uploadProgressText" style="margin-top: 8px; font-size: 12px; color: #555; display:none;"></div>
+                </div>
+            </div>
+
+            <div class="config-group">
+                <label>开学第一周周一</label>
+                <input type="date" id="semesterStart" value="2026-03-09">
+            </div>
+
+            <div class="config-group">
+                <h3>节次时间设置</h3>
+                <div id="timeSettingsPanel" class="time-settings-panel" title="可自定义调整各节次时间">
+                    <div id="timeSettingsHeader" class="time-settings-header" role="button" tabindex="0" aria-expanded="false">
+                        <span id="timeSettingsToggleIcon" class="time-settings-toggle-icon" aria-hidden="true">∨</span>
+                        <div class="time-settings-header-text">
+                            <div id="timeSettingsSummary" class="time-settings-summary">第1节</div>
+                            <div id="timeSettingsHint" class="time-settings-hint">点击展开查看完整课表时间</div>
+                        </div>
+                    </div>
+                    <div class="time-settings-body">
+                        <div id="timeSettingsAlways" class="time-settings" aria-label="第1节时间设置"></div>
+                        <div id="timeSettingsExtraWrap" class="time-settings-extra-wrap" aria-hidden="true">
+                            <div id="timeSettingsExtra" class="time-settings" aria-label="完整节次时间设置"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-group" style="border-top: 1px solid #eee; padding-top: 1rem;">
+                <h3>LLM 智能解析 (可选)</h3>
+                <div class="llm-settings">
+                    <label class="llm-toggle">
+                        <input type="checkbox" id="useLLM" checked> 开启 LLM 智能识别 (Qwen/通义千问)
+                    </label>
+                    <div id="llmConfigFields" style="display: none;">
+                        <label>后端接口地址</label>
+                        <input type="text" id="llmBaseUrl" placeholder="/api/llm"
+                            value="/api/llm">
+
+                        <label>API Key（仅本地直连调试时需要）</label>
+                        <input type="password" id="llmApiKey" placeholder="sk-..." autocomplete="off">
+
+                        <label>模型名称</label>
+                        <input type="text" id="llmModel" placeholder="qwen-flash" value="qwen-flash">
+
+                        <p style="font-size: 0.7rem; color: #888; margin-top: 0.5rem;">
+                            * 推荐使用阿里云通义千问 (Qwen) 以获得最佳中文解析效果。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button id="btnGenerate" class="btn-action">生成月历</button>
+                <div class="export-group" style="border-top: 1px solid #eee; margin-top: 1rem; padding-top: 0.5rem;">
+                    <label for="exportTarget"
+                        style="display:block; font-size:0.8rem; color:#666; margin-bottom:0.3rem;">选择ICS日历导出格式：</label>
+                    <select id="exportTarget" class="btn-secondary" style="margin-bottom: 0.5rem; width: 100%;">
+                        <option value="universal">通用 (Universal)</option>
+                        <option value="ios">iPhone (iOS)</option>
+                        <option value="android">Android (Google)</option>
+                        <option value="windows">Windows (Outlook)</option>
+                        <option value="vcard">通讯录 (vCard/VCF)</option>
+                    </select>
+
+                    <label class="llm-toggle" style="font-size:0.8rem; color:#666; margin: 0 0 0.3rem 0;">
+                        <input type="checkbox" id="exportAlarmEnabled" checked> 添加提醒（仅 iOS/Android ICS）
+                    </label>
+                    <label for="exportAlarmMinutes" style="display:block; font-size:0.8rem; color:#666; margin-bottom:0.3rem;">日历提前提醒时间设定：</label>
+                    <select id="exportAlarmMinutes" class="btn-secondary" style="margin-bottom: 0.5rem; width: 100%;">
+                        <option value="0">不提醒</option>
+                        <option value="5">5 分钟</option>
+                        <option value="10">10 分钟</option>
+                        <option value="15" selected>15 分钟</option>
+                        <option value="30">30 分钟</option>
+                        <option value="60">60 分钟</option>
+                    </select>
+
+                    <button id="btnExport" class="btn-secondary">导出 ICS/VCF</button>
+                    <button id="btnSaveHtml" class="btn-secondary">保存为网页 (HTML)</button>
+                </div>
+                <button id="btnPrint" class="btn-secondary">打印月历</button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div id="llmProgressHost" class="llm-progress-host no-print" style="display:none;">
+                <div class="llm-progress-card">
+                    <div class="llm-progress-head">
+                        <div class="llm-progress-title">LLM 识别进度</div>
+                        <div class="llm-progress-actions">
+                            <span id="llmProgressIcon" class="llm-progress-icon" style="display:none;"></span>
+                            <span id="llmProgressText" class="llm-progress-text">准备中</span>
+                            <button id="llmProgressRetry" class="llm-retry-btn" type="button" style="display:none;">重试</button>
+                        </div>
+                    </div>
+                    <div class="llm-progress-bar">
+                        <div id="llmProgressFill" class="llm-progress-fill" style="width:0%;"></div>
+                    </div>
+                    <div class="llm-progress-meta">
+                        <span id="llmProgressPct" class="llm-progress-pct">0%</span>
+                        <span id="llmProgressCount" class="llm-progress-count">0/0</span>
+                    </div>
+                    <div id="llmProgressError" class="llm-error-banner" style="display:none;">
+                        <span id="llmProgressErrorText" class="llm-error-text"></span>
+                        <button id="llmProgressErrorRetry" class="llm-error-retry" type="button">重试</button>
+                    </div>
+                </div>
+
+                <details id="llmRecognizedPanel" class="llm-recognized-panel" open aria-label="课程面板">
+                    <summary class="llm-recognized-summary" aria-label="展开或收起课程面板">
+                        <span id="llmRecognizedLabel" class="llm-recognized-summary-label">已识别课程</span>
+                        <span id="llmRecognizedSummary" class="llm-recognized-summary-count">0</span>
+                    </summary>
+                    <div class="llm-recognized-body" role="region" aria-label="课程列表与详情">
+                        <ul id="llmRecognizedList" class="llm-recognized-list" aria-label="已识别课程列表"></ul>
+                        <div id="llmCourseDetail" class="llm-course-detail" role="region" aria-label="课程详情" style="display:none;"></div>
+                    </div>
+                </details>
+            </div>
+
+            <div id="llmHint" class="llm-hint no-print" aria-label="LLM 提示">
+                <p class="llm-hint-text">
+                    <span class="llm-hint-line">本工具默认启用大语言模型（LLM）对课程表进行智能识别，通常可在 1 分钟内完成。</span>
+                    <span class="llm-hint-line">如需更快生成结果，可取消勾选“开启 LLM 智能识别”，但识别准确性可能降低。</span>
+                </p>
+            </div>
+
+            <div id="calendarArea" class="calendar-container">
+                <div class="placeholder-text">上传课表成功后请点击生成月历按钮</div>
+                <div class="placeholder-hint">建议上传Excel或可编辑版PDF文件，扫描版PDF及图片识别效果可能受限。</div>
+            </div>
+
+            <section id="courseListPanel" class="course-list-panel no-print" aria-label="课程列表">
+                <button id="courseListToggle" class="course-list-toggle" type="button" aria-expanded="false">
+                    <span class="course-list-toggle-title">课程列表</span>
+                    <span id="courseListSummary" class="course-list-toggle-count">0</span>
+                    <span class="course-list-toggle-chevron" aria-hidden="true"></span>
+                </button>
+                <div id="courseListBody" class="course-list-body" role="region" aria-label="课程列表内容">
+                    <div id="courseListContent" class="course-list-content">
+                        <div class="course-list-empty">生成月历后显示</div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="brand-footer" aria-label="YedaoAI 品牌">
+                <img src="Logo_yedaoai_Green_Web600.png" alt="YedaoAI Logo" class="brand-logo" loading="lazy" decoding="async"
+                    srcset="Logo_yedaoai_Green_Web600.png 600w" sizes="(max-width: 768px) 140px, 180px">
+                <div class="brand-slogan">析万象课表，成清晰日程</div>
+
+                <div class="compliance-area" aria-label="备案信息与网站信息">
+                    <a class="icp-link" href="http://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" aria-label="工信部备案信息：京ICP备2026005506号（新窗口打开）">
+                        <span class="icp-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z" fill="#2563eb" opacity="0.12"/>
+                                <path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z" stroke="#2563eb" stroke-width="1.5"/>
+                                <path d="M9.5 12.2l1.6 1.6 3.7-4" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                        <span class="icp-text">京ICP备2026005506号</span>
+                    </a>
+
+                    <div class="mps-record-line" style="display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin:8px 0; white-space:nowrap;">
+                        <img src="备案图标.PNG" alt="" aria-hidden="true" width="16" height="16" style="width:16px; height:16px; display:block;">
+                        <a class="icp-link" href="https://beian.mps.gov.cn/#/query/webSearch?code=11010202011262" rel="noreferrer" target="_blank">京公网安备11010202011262号</a>
+                    </div>
+
+                    <div class="compliance-buttons" role="group" aria-label="网站信息按钮">
+                        <button type="button" id="btnAboutXike" class="btn-secondary compliance-btn" aria-haspopup="dialog">关于析课</button>
+                        <button type="button" id="btnContact" class="btn-secondary compliance-btn" aria-haspopup="dialog">联系我们</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="siteModalBackdrop" class="modal-backdrop" hidden>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="siteModalTitle" aria-describedby="siteModalBody" tabindex="-1">
+            <div class="modal-header">
+                <h2 id="siteModalTitle" class="modal-title"></h2>
+                <button type="button" id="siteModalClose" class="modal-close" aria-label="关闭对话框">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div id="siteModalBody" class="modal-body"></div>
+            <div id="siteModalActions" class="modal-actions" aria-label="对话框操作"></div>
+        </div>
+    </div>
+
+    <template id="tmplAboutXike">
+        <div class="modal-richtext" aria-label="关于析课内容">
+            <p>“析课”是一款面向高校师生的课表解析与日程生成工具，核心目标是把复杂、格式各异的课表文件，快速整理成清晰、可导入日历的月历与 ICS 日程。</p>
+
+            <div class="modal-section-title">高校课表的常见痛点</div>
+            <p>高校教务系统导出的课表多为周循环静态表格，同一个单元格里常会堆叠多门不同周次的课程，这些课程还可能存在单双周轮换、授课地点不固定的情况。一张看似简洁的表格，每个单元格其实都高度压缩了多维度的动态教学时空信息。每次提取解读课表，都像在做一次耗费精力的“大脑解压缩”。手动处理不仅效率低，还容易出现记错周次、走错教室之类的失误。</p>
+
+            <div class="modal-section-title">析课的优势</div>
+            <ul class="modal-list">
+                <li>支持 Excel / PDF / 图片等多种来源，尽量减少“必须按某种模板导出”的约束。</li>
+                <li>自动识别课程名称、节次、地点、班级与周次，并在月历中直观展示，便于核对与修正。</li>
+                <li>提供节次时间自定义，让不同学校的作息也能准确生成 ICS 日历事件。</li>
+                <li>导出通用 ICS/VCF，兼容 iOS/Android/Outlook 等常见日历客户端。</li>
+            </ul>
+
+            <div class="modal-section-title">与“XX课程表”类 App 的差异</div>
+            <ul class="modal-list">
+                <li>无需注册，直接使用，没有广告！</li>
+                <li>不需要在App内登录教务系统导入课程表，不存储也不要求任何个人信息，隐私无忧！</li>
+                <li>导出的 ICS 可直接用于手机或电脑的日历应用，不用额外安装App或插件。</li>
+            </ul>
+
+            <p class="modal-note">提示：不同学校课表差异较大，若出现识别不完整，可尝试更清晰的文件版本或调整节次时间后再生成。</p>
+        </div>
+    </template>
+
+    <template id="tmplContact">
+        <div class="modal-richtext" aria-label="联系信息">
+            <div class="contact-row" aria-label="邮箱与复制">
+                <span id="contactEmailText" class="contact-email">yedaoai@126.com</span>
+                <button type="button" id="contactCopyBtn" class="copy-icon-btn" aria-label="复制邮箱地址 yedaoai@126.com" title="复制邮箱">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M9 9h10v12H9V9z" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <template id="tmplCourseEditor">
+        <div class="course-editor" aria-label="课程核对与编辑">
+            <div class="course-editor-hint">修改后将实时更新月历。周次输入格式示例：1，3，5，8；第1-16周；第1-16周(单)；2-6周；8-12周(双)。</div>
+            <div class="course-editor-list" data-role="list"></div>
+            <div class="course-editor-history" data-role="history"></div>
+        </div>
+    </template>
+
+    <!-- Runtime Configuration (Optional) -->
+    <script src="llm_parser.js"></script>
+    <script src="time_utils.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
